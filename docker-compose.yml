@@ -1,0 +1,27 @@
+####### PREREQUIREMENT ##########
+#  docker volume rm cc_web_scraper_mongodb_data
+#  docker volume create cc_web_scraper_mongodb_data
+######## BEGIN #########
+
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6
+    container_name: scraper_mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: topsecret
+    ports:
+      - "27017:27017"
+    volumes:
+      - cc_web_scraper_mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  cc_web_scraper_mongodb_data:
+    external: true

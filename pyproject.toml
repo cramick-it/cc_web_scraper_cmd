@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "web-scraper"
+version = "0.1.0"
+description = "A web scraping console application using Playwright and MongoDB"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+playwright = "^1.40.0"
+click = "^8.1.7"
+pymongo = "^4.6.0"
+python-dotenv = "^1.0.0"
+loguru = "^0.7.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-mock = "^3.11.1"
+black = "^23.7.0"
+isort = "^5.12.0"
+flake8 = "^6.0.0"
+mypy = "^1.5.1"
+pytest-playwright = "^0.3.0"  # Added for Playwright testing support
+
+[tool.poetry.scripts]
+scrape = "web_scraper.cli:cli"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
