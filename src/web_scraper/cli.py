@@ -42,4 +42,10 @@ def crawl(site: str, visible: bool, limit: int):
 
 
 if __name__ == '__main__':
-    cli()
+    # cli()
+    async def _run():
+        db = get_db()
+        eyewiki_service = EyewikiService(db)
+        await eyewiki_service.scrape(True, 3)
+
+    asyncio.run(_run())
