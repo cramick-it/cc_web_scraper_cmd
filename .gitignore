@@ -286,6 +286,7 @@ pyrightconfig.json
 
 .env
 local.my_env
+logs/*
 exports/
 exports/*
 codebook.log

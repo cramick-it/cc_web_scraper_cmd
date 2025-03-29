@@ -1,40 +1,45 @@
-import click
-from loguru import logger
-from playwright.sync_api import sync_playwright
+import asyncio
 
-from web_scraper.config import config
-from web_scraper.database.client import get_database
-from web_scraper.scraping.site_specific.example_site import scrape_example_site
+import click
+
+from web_scraper.database.client import get_db
+from web_scraper.services.eyewiki_service import EyewikiService
+
+from web_scraper.services.medicalnewstoday_service import MedicalnewstodayService
+from web_scraper.utils.logging import configure_logging
+
+logger = configure_logging()
+
 
 @click.group()
 def cli():
     """Web Scraper CLI Tool"""
     pass
 
-@cli.command()
-@click.option("--url", help="URL to scrape", required=True)
-def scrape(url):
-    """Scrape a website and store data in MongoDB"""
-    logger.info(f"Starting scraping for URL: {url}")
-    
-    db = get_database()
-    
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        page = browser.new_page()
-        
-        try:
-            # Example scraping - replace with your actual scraping logic
-            if "example.com" in url:
-                data = scrape_example_site(page, url)
-                db.example_data.insert_one(data)
-                logger.success("Data successfully scraped and stored")
-            else:
-                logger.error("Unsupported website")
-        except Exception as e:
-            logger.error(f"Scraping failed: {e}")
-        finally:
-            browser.close()
 
-if __name__ == "__main__":
+def main():
+    cli()
+
+
+@cli.command()
+@click.option('--site', type=click.Choice(['eyewiki', 'medicalnewstoday']), required=True)
+@click.option('--visible', is_flag=True, help='Run browser in visible mode')
+@click.option('--limit', type=int, default=5, help='Limit number of pages to scrape')
+def crawl(site: str, visible: bool, limit: int):
+    async def _run():
+        db = get_db()
+        if site == 'eyewiki':
+            eyewiki_service = EyewikiService(db)
+            await eyewiki_service.scrape(visible, limit)
+        elif site == 'medicalnewstoday':
+            medicalnewstoday_service = MedicalnewstodayService(db)
+            await medicalnewstoday_service.scrape(visible, limit)
+        else:
+            click.echo(f"Unknown site: {site}")
+
+    asyncio.run(_run())
+
+
+
+if __name__ == '__main__':
     cli()

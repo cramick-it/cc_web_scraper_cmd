@@ -41,6 +41,43 @@ poetry env activate
 # Run the CLI tool
 scrape --help
 scrape scrape --url "https://example.com"
+
+
+# Crawl EyeWiki
+poetry run scrape crawl --site eyewiki
+
+# Crawl Medical News Today
+poetry run scrape crawl --site medicalnewstoday
+
+# Sa vidljivim browserom (debug mode)
+poetry run scrape crawl --site eyewiki --visible --limit 5
+
+
+poetry run scrape scrape_eyewiki --visible --limit 5
+poetry run scrape scrape_medicalnewstoday --visible --limit 5
+
+# Normalno pokretanje
+poetry run scrape crawl --site medicalnewstoday
+
 ```
 
 
+## Utils
+
+Pauzirajte izvršavanje da vidite šta se dešava:
+```
+page.pause()  # Dodajte ovo u kod gde želite da pauzirate
+```
+
+
+Snimite screenshot za probleme:
+```
+page.screenshot(path=f"screenshot_{i}.png")
+```
+
+
+Proverite selektore u browser konzoli:
+```
+// U browser konzoli
+document.querySelectorAll('.category-page__member-link').length
+```
