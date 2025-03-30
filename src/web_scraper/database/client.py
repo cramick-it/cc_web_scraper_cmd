@@ -37,18 +37,27 @@ def save_page(page_data: dict) -> bool:
     try:
         db = DatabaseClient().db
         now = datetime.now()
-        result = db.pages.update_one(
-            {'url': page_data['url']},
-            {'$set': {
+
+        # Remove created_at from update if it exists
+        page_data.pop('created_at', None)
+
+        update_data = {
+            '$set': {
                 **page_data,
                 'updated_at': now,
                 'changed_at': now
             },
-                '$setOnInsert': {
-                    'created_at': now
-                }},
+            '$setOnInsert': {
+                'created_at': now
+            }
+        }
+
+        result = db.pages.update_one(
+            {'url': page_data['url']},
+            update_data,
             upsert=True
         )
+
         if result.upserted_id:
             logger.info(f"Saved new page: {page_data['url']}")
         else:
@@ -63,8 +72,10 @@ def save_headings(url: str, headings: List[Dict]) -> bool:
     try:
         db = DatabaseClient().db
         now = datetime.now()
+
         # First remove old headings
         db.headings.delete_many({'url': url})
+
         # Insert new ones if they exist
         if headings:
             # Add metadata to each heading
