@@ -61,6 +61,14 @@ poetry run scrape crawl --site medicalnewstoday
 
 ```
 
+## MongoDB
+
+```javascript
+db.pages.createIndex({url: 1}, {unique: true})
+db.headings.createIndex({url: 1})
+db.headings.createIndex({'heading.checksum': 1})
+```
+
 
 ## Utils
 

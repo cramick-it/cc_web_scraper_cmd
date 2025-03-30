@@ -14,8 +14,9 @@ def cli():
 @click.option('--site', type=click.Choice(['eyewiki', 'medicalnewstoday']), required=True)
 @click.option('--visible', is_flag=True, help='Run browser in visible mode')
 @click.option('--limit', type=int, default=5, help='Page limit')
-def crawl(site, visible, limit):
-    """Main crawl command"""
+@click.option('--force', is_flag=True, help='Force re-crawl even if unchanged')
+def crawl(site, visible, limit, force):
+    """Main crawl command with change detection"""
     setup_logging()
 
     async def run_crawl():

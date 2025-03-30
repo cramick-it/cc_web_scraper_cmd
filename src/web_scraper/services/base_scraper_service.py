@@ -1,12 +1,13 @@
 import asyncio
+import hashlib
 from urllib.parse import urljoin, urlparse
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from collections import deque
 from typing import List, Dict, Optional
 import logging
 from playwright.async_api import async_playwright
-from web_scraper.database.client import save_page
-from web_scraper.entity.models import Page
+from web_scraper.database.client import get_page, save_page, update_page
+from web_scraper.entity.models import Page, Heading
 from web_scraper.config.config import Config
 
 
@@ -20,6 +21,23 @@ class BaseScraperService:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.playwright = None
         self.browser = None
+
+    def _generate_checksum(self, content: str) -> str:
+        return hashlib.md5(content.encode()).hexdigest()
+
+    async def _extract_headings(self, soup: BeautifulSoup) -> List[Heading]:
+        headings = []
+        for i in range(1, 7):
+            for h in soup.find_all(f'h{i}'):
+                if isinstance(h, Tag):
+                    headings.append(Heading(
+                        tag=f'h{i}',
+                        text=h.get_text(strip=True),
+                        anchor=str(h),
+                        level=i,
+                        checksum=self._generate_checksum(str(h))
+                    ))
+        return headings
 
     async def __aenter__(self):
         self.playwright = await async_playwright().start()
@@ -35,30 +53,8 @@ class BaseScraperService:
         if self.playwright:
             await self.playwright.stop()
 
-    def normalize_url(self, url: str) -> str:
-        parsed = urlparse(url)
-        return parsed._replace(fragment='', query='').geturl()
-
-    def should_follow_link(self, url: str) -> bool:
-        parsed = urlparse(url)
-        return (parsed.netloc == urlparse(self.base_url).netloc and
-                parsed.scheme in ('http', 'https') and
-                not any(url.endswith(ext) for ext in Config.IGNORED_EXTENSIONS))
-
-    async def extract_links(self, html: str, current_url: str) -> List[str]:
-        soup = BeautifulSoup(html, 'html.parser')
-        links = set()
-        for a in soup.find_all('a', href=True):
-            href = a['href'].strip()
-            if not href or href.startswith(('javascript:', 'mailto:', 'tel:')):
-                continue
-            absolute_url = urljoin(current_url, href)
-            normalized_url = self.normalize_url(absolute_url)
-            if self.should_follow_link(normalized_url):
-                links.add(normalized_url)
-        return list(links)
-
     async def process_page(self, url: str) -> Page:
+        existing_page = get_page(url)
         try:
             context = await self.browser.new_context()
             page = await context.new_page()
@@ -67,17 +63,25 @@ class BaseScraperService:
             status_code = response.status if response else 0
 
             content = await page.content()
-            body_text = await page.inner_text('body')
+            checksum = self._generate_checksum(content)
 
-            links = await self.extract_links(content, url)
+            if existing_page and existing_page['checksum'] == checksum:
+                update_page(url, {'updated_at': datetime.now()})
+                return Page(**existing_page)
+
+            soup = BeautifulSoup(content, 'html.parser')
+            headings = await self._extract_headings(soup)
+            body_text = await page.inner_text('body')
 
             page_data = Page(
                 site_id=self.site_id,
                 url=url,
                 status_code=status_code,
-                body_html=content,
-                body_text=body_text,
-                links=links,
+                content_html=content,
+                content_text=body_text,
+                headings=headings,
+                links=await self.extract_links(content, url),
+                checksum=checksum,
                 error=None
             )
 
@@ -90,9 +94,6 @@ class BaseScraperService:
                 site_id=self.site_id,
                 url=url,
                 status_code=0,
-                body_html=None,
-                body_text=None,
-                links=[],
                 error=str(e)
             )
 
@@ -108,15 +109,23 @@ class BaseScraperService:
                     self.logger.info(f"Processing: {current_url}")
 
                     page_data = await self.process_page(current_url)
-                    save_page(page_data.dict())
 
-                    if not page_data.error:
-                        new_links = await self.extract_links(page_data.body_html, current_url)
-                        self.queue.extend(
-                            link for link in new_links
-                            if link not in self.visited
-                            and link not in self.queue
-                        )
+                    if page_data.error:
+                        save_page(page_data.dict())
+                        continue
+
+                    existing_page = get_page(current_url)
+                    if existing_page:
+                        update_page(current_url, page_data.dict())
+                    else:
+                        save_page(page_data.dict())
+
+                    new_links = await self.extract_links(page_data.content_html, current_url)
+                    self.queue.extend(
+                        link for link in new_links
+                        if link not in self.visited
+                        and link not in self.queue
+                    )
         except Exception as e:
             self.logger.error(f"Crawling failed: {str(e)}")
             raise

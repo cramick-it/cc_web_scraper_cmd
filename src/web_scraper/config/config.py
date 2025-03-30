@@ -12,10 +12,10 @@ class Config:
     MONGODB_PASSWORD = os.getenv("MONGODB_PASSWORD")
     MONGODB_AUTH_SOURCE = os.getenv("MONGODB_AUTH_SOURCE", "admin")
 
-    # Browser Settings
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    HEADLESS = not bool(os.getenv("SHOW_BROWSER", False))
-
     # Crawler Settings
     REQUEST_TIMEOUT = 30000  # milliseconds
     MAX_PAGES = 1000
+    IGNORED_EXTENSIONS = ['.pdf', '.jpg', '.png', '.docx']
+
+    # Content Settings
+    MIN_CONTENT_LENGTH = 20  # Minimum characters to consider valid content

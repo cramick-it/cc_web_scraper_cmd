@@ -1,7 +1,10 @@
+from typing import List
+
 from bs4 import BeautifulSoup
 from web_scraper.services.base_scraper_service import BaseScraperService
-from web_scraper.entity.models import Page
+from web_scraper.entity.models import Page, Heading
 import logging
+from datetime import datetime
 
 
 class EyewikiService(BaseScraperService):
@@ -13,6 +16,14 @@ class EyewikiService(BaseScraperService):
         )
         self.logger = logging.getLogger(__name__)
 
+    async def _extract_headings(self, soup: BeautifulSoup) -> List[Heading]:
+        headings = await super()._extract_headings(soup)
+        # Eyewiki-specific heading processing
+        for heading in headings:
+            if 'References' in heading.text:
+                heading.level = 2  # Demote references headings
+        return headings
+
     async def process_page(self, url: str) -> Page:
         page_data = await super().process_page(url)
 
@@ -20,29 +31,20 @@ class EyewikiService(BaseScraperService):
             return page_data
 
         try:
-            soup = BeautifulSoup(page_data.body_html, 'html.parser')
+            soup = BeautifulSoup(page_data.content_html, 'html.parser')
 
-            # Initialize meta if not exists
-            if not hasattr(page_data, 'meta'):
-                page_data.meta = {}
-
-            # Extract title
-            title = soup.find('h1', id='firstHeading')
-            if title:
-                page_data.meta['title'] = title.get_text(strip=True)
-
-            # Extract main content
+            # Eyewiki-specific content processing
             content_div = soup.find('div', id='mw-content-text')
             if content_div:
+                # Clean up Eyewiki-specific elements
                 for element in content_div.find_all(['span', 'div'], class_='mw-editsection'):
                     element.decompose()
-                page_data.body_text = content_div.get_text(' ', strip=True)
 
-            # Extract categories
-            categories = [cat.get_text(strip=True)
-                          for cat in soup.select('.mw-normal-catlinks li a')]
-            if categories:
-                page_data.meta['categories'] = categories
+                page_data.content_text = content_div.get_text(' ', strip=True)
+
+            # Save headings separately
+            for heading in page_data.headings:
+                save_heading(page_data.url, heading.dict())
 
         except Exception as e:
             self.logger.error(f"Eyewiki processing error: {str(e)}")

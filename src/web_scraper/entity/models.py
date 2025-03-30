@@ -2,14 +2,23 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 
+class Heading(BaseModel):
+    tag: str
+    text: str
+    anchor: str
+    level: int
+    checksum: str
+
 class Page(BaseModel):
     site_id: str
     url: str
     status_code: int
-    body_html: Optional[str] = None
-    body_text: Optional[str] = None
+    content_html: Optional[str] = None
+    content_text: Optional[str] = None
+    headings: List[Heading] = []
     links: List[Dict] = []
-    timestamp: datetime = datetime.now()
+    created_at: datetime = datetime.now()
+    updated_at: datetime = datetime.now()
+    checksum: Optional[str] = None
     error: Optional[str] = None
-    meta: Dict = {}
     processed: bool = True
