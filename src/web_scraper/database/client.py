@@ -15,6 +15,10 @@ class DatabaseClient:
         try:
             self.client = MongoClient(
                 Config.MONGODB_URI,
+                username='root',
+                password='topsecret',
+                authSource='admin',
+                authMechanism='SCRAM-SHA-256',
                 connectTimeoutMS=30000,
                 socketTimeoutMS=30000
             )

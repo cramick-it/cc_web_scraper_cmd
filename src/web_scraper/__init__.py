@@ -1,9 +1,5 @@
-from services.eyewiki_service import  EyewikiService
-from services.medicalnewstoday_service import MedicalNewsTodayService
+# src/web_scraper/__init__.py
+from web_scraper.services.eyewiki_service import EyewikiService
+from web_scraper.services.medicalnewstoday_service import MedicalNewsTodayService
 
-__version__ = '1.0.0'
-
-__all__ = [
-    'EyewikiService',
-    'MedicalNewsTodayService'
-]
+__all__ = ['EyewikiService', 'MedicalNewsTodayService']

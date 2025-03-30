@@ -1,7 +1,7 @@
-from .client import get_db
+from .client import save_page
 
 __version__ = '1.0.0'
 
 __all__ = [
-    'get_db'
+    'save_page'
 ]

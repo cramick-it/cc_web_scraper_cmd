@@ -1,35 +1,30 @@
-import argparse
-import logging
-from web_scraper.services import MedicalNewsTodayService, EyewikiService
-from web_scraper.config.logging_conf import setup_logging
+import click
+from web_scraper.services.eyewiki_service import EyewikiService
+from web_scraper.services.medicalnewstoday_service import MedicalNewsTodayService
 
-SERVICE_MAP = {
-    'medicalnewstoday': MedicalNewsTodayService,
-    'eyewiki': EyewikiService
-}
+
+@click.group()
+def cli():
+    pass
+
+
+@cli.command()
+@click.option('--site', type=click.Choice(['eyewiki', 'medicalnewstoday']), required=True)
+@click.option('--visible', is_flag=True, help='Only scrape visible text')
+@click.option('--limit', type=int, default=5, help='Page limit')
+def crawl(site, visible, limit):
+    """Main crawl command that matches your existing interface"""
+    service_map = {
+        'eyewiki': EyewikiService,
+        'medicalnewstoday': MedicalNewsTodayService
+    }
+
+    scraper = service_map[site](site_id=site)
+    scraper.crawl(max_pages=limit)
 
 
 def main():
-    setup_logging()
-    logger = logging.getLogger(__name__)
+    cli()
 
-    parser = argparse.ArgumentParser(description="Website Scraper CLI")
-    parser.add_argument("--site-id", required=True, help="Unique site identifier")
-    parser.add_argument("--service", required=True, choices=SERVICE_MAP.keys(), help="Service to use")
-    parser.add_argument("--max-pages", type=int, default=100, help="Maximum pages to crawl")
-
-    args = parser.parse_args()
-
-    try:
-        service_class = SERVICE_MAP[args.service]
-        with service_class(site_id=args.site_id) as scraper:
-            scraper.crawl(max_pages=args.max_pages)
-    except KeyboardInterrupt:
-        logger.info("Scraping interrupted by user")
-    except Exception as e:
-        logger.error(f"Scraping failed: {str(e)}")
-        raise
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    cli()
