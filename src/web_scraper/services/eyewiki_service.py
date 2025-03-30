@@ -14,39 +14,46 @@ class EyewikiService(BaseScraperService):
         self.logger = logging.getLogger(__name__)
 
     def process_page(self, url: str) -> Page:
-        """Eyewiki-specific processing with proper meta field handling"""
+        """Extends base processing with Eyewiki-specific logic"""
+        # First call parent class processing
         page_data = super().process_page(url)
 
-        if page_data.body_html and not page_data.error:
-            try:
-                soup = BeautifulSoup(page_data.body_html, 'html.parser')
+        if page_data.error:
+            return page_data
 
-                # Initialize meta as dict if not exists
-                if not hasattr(page_data, 'meta'):
-                    page_data.meta = {}
+        try:
+            self.logger.info(f"Processing Eyewiki page: {url}")
+            soup = BeautifulSoup(page_data.body_html, 'html.parser')
 
-                # Extract title
-                title = soup.find('h1', id='firstHeading')
-                if title:
-                    page_data.meta['title'] = title.get_text(strip=True)
+            # Initialize meta if not exists
+            if not hasattr(page_data, 'meta') or not page_data.meta:
+                page_data.meta = {}
 
-                # Extract main content
-                content_div = soup.find('div', id='mw-content-text')
-                if content_div:
-                    # Clean up content
-                    for element in content_div.find_all(['span', 'div'], class_='mw-editsection'):
-                        element.decompose()
-                    page_data.body_text = content_div.get_text(' ', strip=True)
+            # Extract title
+            title = soup.find('h1', id='firstHeading')
+            if title:
+                page_data.meta['title'] = title.get_text(strip=True)
+                self.logger.debug(f"Extracted title: {page_data.meta['title']}")
 
-                # Extract categories
-                categories = [cat.get_text(strip=True)
-                              for cat in soup.select('.mw-normal-catlinks li a')]
-                if categories:
-                    page_data.meta['categories'] = categories
+            # Extract main content
+            content_div = soup.find('div', id='mw-content-text')
+            if content_div:
+                # Clean up content
+                for element in content_div.find_all(['span', 'div'], class_='mw-editsection'):
+                    element.decompose()
+                page_data.body_text = content_div.get_text(' ', strip=True)
+                self.logger.debug(f"Extracted content length: {len(page_data.body_text)}")
 
-            except Exception as e:
-                self.logger.error(f"Eyewiki processing error: {str(e)}")
-                page_data.error = f"Content processing error: {str(e)}"
+            # Extract categories
+            categories = [cat.get_text(strip=True)
+                          for cat in soup.select('.mw-normal-catlinks li a')]
+            if categories:
+                page_data.meta['categories'] = categories
+                self.logger.debug(f"Found categories: {categories}")
+
+        except Exception as e:
+            self.logger.error(f"Eyewiki processing error: {str(e)}")
+            page_data.error = f"Content processing error: {str(e)}"
 
         return page_data
 

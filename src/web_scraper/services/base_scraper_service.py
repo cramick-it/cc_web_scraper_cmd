@@ -131,10 +131,11 @@ class BaseScraperService:
         return (urlparse(url).netloc != urlparse(self.base_url).netloc
                 and not url.startswith('/'))
 
-    def crawl(self, max_pages: int = 1000):
+    def crawl(self, max_pages: int = 1000, visible: bool = False, limit: int = 5):
         try:
             while self.queue and len(self.visited) < max_pages:
                 current_url = self.queue.popleft()
+                self.logger.info(f"Processing: {current_url}")
 
                 if current_url in self.visited:
                     continue
