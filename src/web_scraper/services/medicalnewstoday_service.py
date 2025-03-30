@@ -21,6 +21,10 @@ class MedicalNewsTodayService(BaseScraperService):
             try:
                 soup = BeautifulSoup(page_data.body_html, 'html.parser')
 
+                # Initialize meta as dict if not exists
+                if not hasattr(page_data, 'meta'):
+                    page_data.meta = {}
+
                 # Article extraction
                 article = soup.find('article')
                 if article:

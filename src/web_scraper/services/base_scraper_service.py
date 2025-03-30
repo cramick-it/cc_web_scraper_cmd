@@ -84,7 +84,8 @@ class BaseScraperService:
                 body_html=str(soup),
                 body_text=soup.get_text(' ', strip=True),
                 links=self.extract_link_metadata(soup),
-                error=None
+                error=None,
+                meta={}  # Initialize empty meta dict
             )
 
         except requests.RequestException as e:
@@ -96,7 +97,8 @@ class BaseScraperService:
                 body_html=None,
                 body_text=None,
                 links=[],
-                error=str(e)
+                error=str(e),
+                meta={}  # Initialize empty meta dict
             )
         except Exception as e:
             self.logger.error(f"Unexpected error processing {url}: {str(e)}")
@@ -107,7 +109,8 @@ class BaseScraperService:
                 body_html=None,
                 body_text=None,
                 links=[],
-                error=str(e)
+                error=str(e),
+                meta={}  # Initialize empty meta dict
             )
 
     def extract_link_metadata(self, soup: BeautifulSoup) -> List[Dict]:

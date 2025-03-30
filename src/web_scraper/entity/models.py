@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import Optional, List, Dict
 
 class Page(BaseModel):
     site_id: str
@@ -12,3 +12,4 @@ class Page(BaseModel):
     timestamp: datetime = datetime.now()
     error: Optional[str] = None
     processed: bool = True
+    meta: Dict = {}  # Add this line for custom metadata
