@@ -1,62 +1,66 @@
+from urllib.parse import urlparse
+
+from bs4 import BeautifulSoup
+from .base_scraper_service import BaseScraperService
+from web_scraper.entity.models import Page
 import logging
-from datetime import datetime
+from typing import Optional, Dict
 
-from playwright.async_api import async_playwright
-from pymongo.database import Database
-from typing import List
-from urllib.parse import urljoin
-from web_scraper.services.base_scraper_service import BaseScraperService
-
-logger = logging.getLogger(__name__)
 
 class EyewikiService(BaseScraperService):
-    def __init__(self, db: Database):
-        self.name = 'EyeWiki'
-        self.db = db
-        print("✅ Database connection established")
-        self.base_url = 'https://eyewiki.org'
-        self.category_url = f'{self.base_url}/Category:Articles'
+    def __init__(self, site_id: str):
+        super().__init__(
+            base_url="https://eyewiki.org",
+            site_id=site_id
+        )
+        self.logger = logging.getLogger(__name__)
+        self.session.headers.update({
+            'Accept': 'text/html,application/xhtml+xml',
+            'Referer': self.base_url
+        })
 
-    async def _crawl_category(self, url: str) -> List[str]:
-        await self.load_page(url)
-        links = []
-        # Koristite Playwright selektor umesto BeautifulSoup
-        # link_elements = self.page.query_selector_all('.category-page__member-link')
-        link_elements = await self.page.query_selector_all('a')
-        print(f"Found {len(link_elements)} link elements")
+    def process_page(self, url: str) -> Page:
+        """Eyewiki-specific page processing"""
+        page_data = super().process_page(url)
 
-        for element in link_elements:
-            href = await element.get_attribute('href')
-            if href:
-                if href.startswith("//") or (href.lower().startswith("http") and not href.lower().startswith(url.lower())):
-                    print(f"Skipping {href}")
-                    continue
-                full_url = urljoin(url, href)
-                print(f"Processing link: {full_url}")
-                links.append(full_url)
+        if page_data.body_html and not page_data.error:
+            try:
+                soup = BeautifulSoup(page_data.body_html, 'html.parser')
 
-        return links
+                # Main content extraction
+                content_div = soup.find('div', {'id': 'mw-content-text'})
+                if content_div:
+                    # Remove edit sections and other noise
+                    for element in content_div.find_all(['span', 'div'], class_='mw-editsection'):
+                        element.decompose()
 
-    async def scrape(self, visible: bool, limit: int):
-        print(f"Scraping {self.base_url}")
+                    # Clean tables
+                    for table in content_div.find_all('table'):
+                        table.decompose() if 'infobox' in table.get('class', []) else None
 
-        # db = get_db()
-        # print("✅ Database connection established")
+                    page_data.body_text = content_div.get_text(' ', strip=True)
 
-        async with async_playwright() as p:
-            # Launch browser with context
-            # browser = await p.chromium.launch(headless=not visible)
-            browser = await self.launch_browser(p, visible)
-            page, context = await self.open_page(browser)
-            self.page = page
-            print(f"🔍 Starting EyeWiki crawl: {self.category_url}")
-            result = self.update_site_record()
+                    # Extract metadata
+                    title = soup.find('h1', {'id': 'firstHeading'})
+                    contributors = [a.get_text(strip=True) for a in soup.select('.mw-contributors li a')]
+                    last_updated = soup.find('li', {'id': 'footer-info-lastmod'})
 
-            # Get article links
-            print("🔄 Collecting article links...")
-            # urls = scraper.crawl_category(self.category_url)
-            urls = await self._crawl_category(self.category_url)
-            print(f"📊 Found {len(urls)} articles")
+                    page_data.meta = {
+                        'title': title.get_text(strip=True) if title else None,
+                        'contributors': contributors,
+                        'last_updated': last_updated.get_text(strip=True) if last_updated else None,
+                        'categories': [c.get_text(strip=True) for c in soup.select('.mw-normal-catlinks li a')]
+                    }
 
-            await self.process_page_urls(browser, context, limit, page, urls)
+            except Exception as e:
+                self.logger.error(f"Eyewiki processing error: {str(e)}")
+                page_data.error = f"Content processing error: {str(e)}"
 
+        return page_data
+
+    def should_follow_link(self, url: str) -> bool:
+        """Override for Eyewiki-specific link filtering"""
+        parsed = urlparse(url)
+        return (super().should_follow_link(url) and
+                not parsed.path.startswith(('/Special:', '/File:', '/Talk:')) and
+                'action=edit' not in parsed.query)

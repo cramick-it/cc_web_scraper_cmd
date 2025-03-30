@@ -1,51 +1,35 @@
-import asyncio
+import argparse
+import logging
+from web_scraper.services import MedicalNewsTodayService, EyewikiService
+from web_scraper.config.logging_conf import setup_logging
 
-import click
-
-from web_scraper.database.client import get_db
-from web_scraper.services.eyewiki_service import EyewikiService
-
-from web_scraper.services.medicalnewstoday_service import MedicalnewstodayService
-from web_scraper.utils.logging import configure_logging
-
-logger = configure_logging()
-
-
-@click.group()
-def cli():
-    """Web Scraper CLI Tool"""
-    pass
+SERVICE_MAP = {
+    'medicalnewstoday': MedicalNewsTodayService,
+    'eyewiki': EyewikiService
+}
 
 
 def main():
-    cli()
+    setup_logging()
+    logger = logging.getLogger(__name__)
+
+    parser = argparse.ArgumentParser(description="Website Scraper CLI")
+    parser.add_argument("--site-id", required=True, help="Unique site identifier")
+    parser.add_argument("--service", required=True, choices=SERVICE_MAP.keys(), help="Service to use")
+    parser.add_argument("--max-pages", type=int, default=100, help="Maximum pages to crawl")
+
+    args = parser.parse_args()
+
+    try:
+        service_class = SERVICE_MAP[args.service]
+        with service_class(site_id=args.site_id) as scraper:
+            scraper.crawl(max_pages=args.max_pages)
+    except KeyboardInterrupt:
+        logger.info("Scraping interrupted by user")
+    except Exception as e:
+        logger.error(f"Scraping failed: {str(e)}")
+        raise
 
 
-@cli.command()
-@click.option('--site', type=click.Choice(['eyewiki', 'medicalnewstoday']), required=True)
-@click.option('--visible', is_flag=True, help='Run browser in visible mode')
-@click.option('--limit', type=int, default=5, help='Limit number of pages to scrape')
-def crawl(site: str, visible: bool, limit: int):
-    async def _run():
-        db = get_db()
-        if site == 'eyewiki':
-            eyewiki_service = EyewikiService(db)
-            await eyewiki_service.scrape(visible, limit)
-        elif site == 'medicalnewstoday':
-            medicalnewstoday_service = MedicalnewstodayService(db)
-            await medicalnewstoday_service.scrape(visible, limit)
-        else:
-            click.echo(f"Unknown site: {site}")
-
-    asyncio.run(_run())
-
-
-
-if __name__ == '__main__':
-    # cli()
-    async def _run():
-        db = get_db()
-        eyewiki_service = EyewikiService(db)
-        await eyewiki_service.scrape(True, 3)
-
-    asyncio.run(_run())
+if __name__ == "__main__":
+    main()
