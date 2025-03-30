@@ -9,6 +9,7 @@ from playwright.async_api import async_playwright
 from web_scraper.database.client import save_page, save_headings, get_page
 from web_scraper.entity.models import Page, Heading
 from web_scraper.config.config import Config
+from datetime import datetime
 
 
 class BaseScraperService:
@@ -25,19 +26,25 @@ class BaseScraperService:
     def _generate_checksum(self, content: str) -> str:
         return hashlib.md5(content.encode()).hexdigest()
 
-    def _extract_headings(self, soup: BeautifulSoup) -> List[Heading]:
+    def _extract_headings(self, soup: BeautifulSoup) -> List[Dict]:
         headings = []
+        now = datetime.now()
         for i in range(1, 7):  # h1 through h6
             for heading in soup.find_all(f'h{i}'):
                 heading_text = heading.get_text(strip=True)
                 if heading_text:  # Only include non-empty headings
-                    headings.append(Heading(
-                        tag=f'h{i}',
-                        text=heading_text,
-                        anchor=str(heading),
-                        level=i,
-                        checksum=self._generate_checksum(str(heading))
-                    ))
+                    headings.append({
+                        'tag': f'h{i}',
+                        'title': heading_text,
+                        'text': heading_text,
+                        'text_html': str(heading),
+                        'anchor': str(heading),
+                        'level': i,
+                        'checksum': self._generate_checksum(str(heading)),
+                        'created_at': now,
+                        'updated_at': now,
+                        'changed_at': now
+                    })
         return headings
 
     async def __aenter__(self):
@@ -89,7 +96,7 @@ class BaseScraperService:
 
             # Save to database
             save_page(page_data.dict())
-            save_headings(url, [h.dict() for h in headings])
+            save_headings(url, headings)
 
             await page.close()
             await context.close()
