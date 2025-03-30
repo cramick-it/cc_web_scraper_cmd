@@ -17,8 +17,8 @@ class Page(BaseModel):
     content_text: Optional[str] = None
     headings: List[Heading] = []
     links: List[Dict] = []
+    checksum: Optional[str] = None
     created_at: datetime = datetime.now()
     updated_at: datetime = datetime.now()
-    checksum: Optional[str] = None
     error: Optional[str] = None
     processed: bool = True

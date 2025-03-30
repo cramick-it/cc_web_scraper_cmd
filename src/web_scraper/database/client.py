@@ -1,72 +1,86 @@
-from pymongo import MongoClient, ReturnDocument
+from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from web_scraper.config.config import Config
 import logging
 from datetime import datetime
+from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-_client = None
 
-def get_client():
-    global _client
-    if _client is None:
-        try:
-            _client = MongoClient(
-                Config.MONGODB_URI,
-                username=Config.MONGODB_USERNAME,
-                password=Config.MONGODB_PASSWORD,
-                authSource=Config.MONGODB_AUTH_SOURCE,
-                connectTimeoutMS=30000
-            )
-        except PyMongoError as e:
-            logger.error(f"Database connection failed: {str(e)}")
-            raise
-    return _client
+class DatabaseClient:
+    _instance = None
 
-def get_db():
-    return get_client()[Config.MONGODB_DB]
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            try:
+                cls._instance.client = MongoClient(
+                    Config.MONGODB_URI,
+                    username=Config.MONGODB_USERNAME,
+                    password=Config.MONGODB_PASSWORD,
+                    authSource=Config.MONGODB_AUTH_SOURCE,
+                    connectTimeoutMS=30000
+                )
+                cls._instance.db = cls._instance.client[Config.MONGODB_DB]
+                # Create indexes
+                cls._instance.db.pages.create_index('url', unique=True)
+                cls._instance.db.headings.create_index('url')
+                cls._instance.db.headings.create_index('checksum')
+            except PyMongoError as e:
+                logger.error(f"Database connection failed: {str(e)}")
+                raise
+        return cls._instance
 
-def get_page(url: str) -> dict:
+
+def save_page(page_data: dict) -> bool:
     try:
-        return get_db().pages.find_one({'url': url})
-    except PyMongoError as e:
-        logger.error(f"Failed to get page {url}: {str(e)}")
-        return None
-
-def save_page(page_data: dict):
-    try:
-        result = get_db().pages.insert_one(page_data)
-        logger.info(f"Saved new page: {page_data['url']}")
-        return result.inserted_id
-    except PyMongoError as e:
-        logger.error(f"Failed to save page {page_data.get('url')}: {str(e)}")
-        return None
-
-def update_page(url: str, updates: dict):
-    try:
-        updates['updated_at'] = datetime.now()
-        result = get_db().pages.find_one_and_update(
-            {'url': url},
-            {'$set': updates},
-            return_document=ReturnDocument.AFTER
-        )
-        if result:
-            logger.info(f"Updated page: {url}")
-        return result
-    except PyMongoError as e:
-        logger.error(f"Failed to update page {url}: {str(e)}")
-        return None
-
-def save_heading(url: str, heading: dict):
-    try:
-        result = get_db().headings.update_one(
-            {'url': url, 'heading.checksum': heading['checksum']},
-            {'$set': {'heading': heading, 'updated_at': datetime.now()}},
+        db = DatabaseClient().db
+        result = db.pages.update_one(
+            {'url': page_data['url']},
+            {'$set': {
+                **page_data,
+                'updated_at': datetime.now()
+            },
+                '$setOnInsert': {
+                    'created_at': datetime.now()
+                }},
             upsert=True
         )
-        logger.debug(f"Saved heading for {url}")
-        return result.upserted_id
-    except PyMongoError as e:
-        logger.error(f"Failed to save heading for {url}: {str(e)}")
+        if result.upserted_id:
+            logger.info(f"Saved new page: {page_data['url']}")
+        else:
+            logger.info(f"Updated existing page: {page_data['url']}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save page: {str(e)}")
+        return False
+
+
+def save_headings(url: str, headings: List[Dict]) -> bool:
+    try:
+        db = DatabaseClient().db
+        # First remove old headings
+        db.headings.delete_many({'url': url})
+        # Insert new ones if they exist
+        if headings:
+            # Add url and timestamp to each heading
+            headings_with_meta = [
+                {**h, 'url': url, 'created_at': datetime.now()}
+                for h in headings
+            ]
+            result = db.headings.insert_many(headings_with_meta)
+            logger.info(f"Saved {len(result.inserted_ids)} headings for {url}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save headings: {str(e)}")
+        return False
+
+
+def get_page(url: str) -> Optional[dict]:
+    try:
+        db = DatabaseClient().db
+        return db.pages.find_one({'url': url})
+    except Exception as e:
+        logger.error(f"Failed to get page: {str(e)}")
         return None

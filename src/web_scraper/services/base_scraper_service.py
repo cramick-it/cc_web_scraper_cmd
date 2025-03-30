@@ -1,12 +1,12 @@
 import asyncio
 import hashlib
 from urllib.parse import urljoin, urlparse
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from collections import deque
 from typing import List, Dict, Optional
 import logging
 from playwright.async_api import async_playwright
-from web_scraper.database.client import get_page, save_page, update_page
+from web_scraper.database.client import save_page, save_headings, get_page
 from web_scraper.entity.models import Page, Heading
 from web_scraper.config.config import Config
 
@@ -25,17 +25,18 @@ class BaseScraperService:
     def _generate_checksum(self, content: str) -> str:
         return hashlib.md5(content.encode()).hexdigest()
 
-    async def _extract_headings(self, soup: BeautifulSoup) -> List[Heading]:
+    def _extract_headings(self, soup: BeautifulSoup) -> List[Heading]:
         headings = []
-        for i in range(1, 7):
-            for h in soup.find_all(f'h{i}'):
-                if isinstance(h, Tag):
+        for i in range(1, 7):  # h1 through h6
+            for heading in soup.find_all(f'h{i}'):
+                heading_text = heading.get_text(strip=True)
+                if heading_text:  # Only include non-empty headings
                     headings.append(Heading(
                         tag=f'h{i}',
-                        text=h.get_text(strip=True),
-                        anchor=str(h),
+                        text=heading_text,
+                        anchor=str(heading),
                         level=i,
-                        checksum=self._generate_checksum(str(h))
+                        checksum=self._generate_checksum(str(heading))
                     ))
         return headings
 
@@ -65,12 +66,15 @@ class BaseScraperService:
             content = await page.content()
             checksum = self._generate_checksum(content)
 
-            if existing_page and existing_page['checksum'] == checksum:
-                update_page(url, {'updated_at': datetime.now()})
+            # Check if page exists and hasn't changed
+            if existing_page and existing_page.get('checksum') == checksum:
+                self.logger.info(f"Content unchanged for {url}")
+                await page.close()
+                await context.close()
                 return Page(**existing_page)
 
             soup = BeautifulSoup(content, 'html.parser')
-            headings = await self._extract_headings(soup)
+            headings = self._extract_headings(soup)
             body_text = await page.inner_text('body')
 
             page_data = Page(
@@ -80,16 +84,20 @@ class BaseScraperService:
                 content_html=content,
                 content_text=body_text,
                 headings=headings,
-                links=await self.extract_links(content, url),
-                checksum=checksum,
-                error=None
+                checksum=checksum
             )
+
+            # Save to database
+            save_page(page_data.dict())
+            save_headings(url, [h.dict() for h in headings])
 
             await page.close()
             await context.close()
 
             return page_data
+
         except Exception as e:
+            self.logger.error(f"Error processing {url}: {str(e)}")
             return Page(
                 site_id=self.site_id,
                 url=url,
@@ -110,22 +118,36 @@ class BaseScraperService:
 
                     page_data = await self.process_page(current_url)
 
-                    if page_data.error:
-                        save_page(page_data.dict())
-                        continue
-
-                    existing_page = get_page(current_url)
-                    if existing_page:
-                        update_page(current_url, page_data.dict())
-                    else:
-                        save_page(page_data.dict())
-
-                    new_links = await self.extract_links(page_data.content_html, current_url)
-                    self.queue.extend(
-                        link for link in new_links
-                        if link not in self.visited
-                        and link not in self.queue
-                    )
+                    if not page_data.error:
+                        new_links = await self._extract_links(page_data.content_html, current_url)
+                        self.queue.extend(
+                            link for link in new_links
+                            if link not in self.visited
+                            and link not in self.queue
+                        )
         except Exception as e:
             self.logger.error(f"Crawling failed: {str(e)}")
             raise
+
+    async def _extract_links(self, html: str, current_url: str) -> List[str]:
+        soup = BeautifulSoup(html, 'html.parser')
+        links = set()
+        for a in soup.find_all('a', href=True):
+            href = a['href'].strip()
+            if not href or href.startswith(('javascript:', 'mailto:', 'tel:')):
+                continue
+            absolute_url = urljoin(current_url, href)
+            normalized_url = self._normalize_url(absolute_url)
+            if self._should_follow_link(normalized_url):
+                links.add(normalized_url)
+        return list(links)
+
+    def _normalize_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        return parsed._replace(fragment='', query='').geturl()
+
+    def _should_follow_link(self, url: str) -> bool:
+        parsed = urlparse(url)
+        return (parsed.netloc == urlparse(self.base_url).netloc and
+                parsed.scheme in ('http', 'https') and
+                not any(url.endswith(ext) for ext in Config.IGNORED_EXTENSIONS))
