@@ -1,7 +1,8 @@
 import click
+import asyncio
 import logging
-from web_scraper.services.eyewiki_service import EyewikiService
-from web_scraper.services.medicalnewstoday_service import MedicalNewsTodayService
+from web_scraper.services import EyewikiService, MedicalNewsTodayService
+from web_scraper.config.logging_conf import setup_logging
 
 
 @click.group()
@@ -11,28 +12,25 @@ def cli():
 
 @cli.command()
 @click.option('--site', type=click.Choice(['eyewiki', 'medicalnewstoday']), required=True)
-@click.option('--visible', is_flag=True, help='Only scrape visible text')
+@click.option('--visible', is_flag=True, help='Run browser in visible mode')
 @click.option('--limit', type=int, default=5, help='Page limit')
-@click.option('--verbose', is_flag=True, help='Enable verbose logging')
-def crawl(site, visible: bool, limit: int, verbose: bool):
-    """Main crawl command that matches your existing interface"""
-    # Configure logging
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+def crawl(site, visible, limit):
+    """Main crawl command"""
+    setup_logging()
 
-    service_map = {
-        'eyewiki': EyewikiService,
-        'medicalnewstoday': MedicalNewsTodayService
-    }
+    async def run_crawl():
+        service_map = {
+            'eyewiki': EyewikiService,
+            'medicalnewstoday': MedicalNewsTodayService
+        }
+        service = service_map[site](site_id=site, visible=visible)
+        await service.crawl(max_pages=limit)
 
-    scraper = service_map[site](site_id=site)
-    scraper.crawl(max_pages=limit, visible=visible, limit=limit)
+    asyncio.run(run_crawl())
 
-
-def main():
-    cli()
 
 if __name__ == '__main__':
+    cli()
+
+def main():
     cli()

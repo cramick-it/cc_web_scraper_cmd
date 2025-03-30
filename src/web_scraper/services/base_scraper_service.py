@@ -1,162 +1,109 @@
-import requests
+import asyncio
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from collections import deque
 from typing import List, Dict, Optional
 import logging
+from playwright.async_api import async_playwright
 from web_scraper.database.client import save_page
 from web_scraper.entity.models import Page
 from web_scraper.config.config import Config
 
 
 class BaseScraperService:
-    def __init__(self, base_url: str, site_id: str):
+    def __init__(self, base_url: str, site_id: str, visible: bool = False):
         self.base_url = base_url
         self.site_id = site_id
+        self.visible = visible
         self.visited = set()
         self.queue = deque([base_url])
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': Config.USER_AGENT,
-            'Accept-Language': 'en-US,en;q=0.9'
-        })
         self.logger = logging.getLogger(__name__)
+        self.playwright = None
+        self.browser = None
 
-    def __enter__(self):
+    async def __aenter__(self):
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(
+            headless=not self.visible,
+            args=['--no-sandbox']
+        )
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close_resources()
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
 
-    def close_resources(self):
-        """Properly cleanup all resources"""
-        try:
-            self.session.close()
-            self.logger.info("HTTP session closed successfully")
-        except Exception as e:
-            self.logger.error(f"Error closing session: {str(e)}")
-
-    def normalize_url(self, url: str) -> str:
-        parsed = urlparse(url)
-        return parsed._replace(fragment='', query='').geturl()
-
-    def should_follow_link(self, url: str) -> bool:
-        parsed = urlparse(url)
-        return (parsed.scheme in ('http', 'https') and
-                parsed.netloc == urlparse(self.base_url).netloc and
-                not any(url.endswith(ext) for ext in Config.IGNORED_EXTENSIONS))
-
-    def extract_links(self, html: str, current_url: str) -> List[str]:
+    async def extract_links(self, html: str, current_url: str) -> List[str]:
         soup = BeautifulSoup(html, 'html.parser')
         links = set()
-
         for a in soup.find_all('a', href=True):
-            try:
-                href = a['href'].strip()
-                if not href or href.startswith(('javascript:', 'mailto:', 'tel:')):
-                    continue
-
-                absolute_url = urljoin(current_url, href)
-                normalized_url = self.normalize_url(absolute_url)
-
-                if self.should_follow_link(normalized_url):
-                    links.add(normalized_url)
-            except Exception as e:
-                self.logger.warning(f"Error processing link {a}: {str(e)}")
-
+            href = a['href'].strip()
+            if not href or href.startswith(('javascript:', 'mailto:', 'tel:')):
+                continue
+            absolute_url = urljoin(current_url, href)
+            normalized_url = self.normalize_url(absolute_url)
+            if self.should_follow_link(normalized_url):
+                links.add(normalized_url)
         return list(links)
 
-    def process_page(self, url: str) -> Page:
+    async def process_page(self, url: str) -> Page:
         try:
-            response = self.session.get(
-                url,
-                timeout=Config.REQUEST_TIMEOUT,
-                allow_redirects=True
-            )
-            response.raise_for_status()
+            context = await self.browser.new_context()
+            page = await context.new_page()
 
-            soup = BeautifulSoup(response.content, 'html.parser')
+            response = await page.goto(url, timeout=15000)
+            status_code = response.status if response else 0
+
+            content = await page.content()
+            body_text = await page.inner_text('body')
+
+            links = await self.extract_links(content, url)
+
+            await page.close()
+            await context.close()
 
             return Page(
                 site_id=self.site_id,
                 url=url,
-                status_code=response.status_code,
-                body_html=str(soup),
-                body_text=soup.get_text(' ', strip=True),
-                links=self.extract_link_metadata(soup),
-                error=None,
-                meta={}  # Initialize empty meta dict
-            )
-
-        except requests.RequestException as e:
-            self.logger.error(f"Request failed for {url}: {str(e)}")
-            return Page(
-                site_id=self.site_id,
-                url=url,
-                status_code=getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None,
-                body_html=None,
-                body_text=None,
-                links=[],
-                error=str(e),
-                meta={}  # Initialize empty meta dict
+                status_code=status_code,
+                body_html=content,
+                body_text=body_text,
+                links=links,
+                error=None
             )
         except Exception as e:
-            self.logger.error(f"Unexpected error processing {url}: {str(e)}")
             return Page(
                 site_id=self.site_id,
                 url=url,
-                status_code=None,
+                status_code=0,
                 body_html=None,
                 body_text=None,
                 links=[],
-                error=str(e),
-                meta={}  # Initialize empty meta dict
+                error=str(e)
             )
 
-    def extract_link_metadata(self, soup: BeautifulSoup) -> List[Dict]:
-        metadata = []
-        for a in soup.find_all('a', href=True):
-            try:
-                metadata.append({
-                    'url': a.get('href'),
-                    'title': a.get_text(strip=True),
-                    'anchor': str(a),
-                    'is_external': self.is_external_link(a.get('href', ''))
-                })
-            except Exception as e:
-                self.logger.warning(f"Error extracting link metadata: {str(e)}")
-        return metadata
-
-    def is_external_link(self, url: str) -> bool:
-        return (urlparse(url).netloc != urlparse(self.base_url).netloc
-                and not url.startswith('/'))
-
-    def crawl(self, max_pages: int = 1000, visible: bool = False, limit: int = 5):
+    async def crawl(self, max_pages: int = 5):
         try:
-            while self.queue and len(self.visited) < max_pages:
-                current_url = self.queue.popleft()
-                self.logger.info(f"Processing: {current_url}")
+            async with self:
+                while self.queue and len(self.visited) < max_pages:
+                    current_url = self.queue.popleft()
+                    if current_url in self.visited:
+                        continue
 
-                if current_url in self.visited:
-                    continue
+                    self.visited.add(current_url)
+                    self.logger.info(f"Processing: {current_url}")
 
-                self.visited.add(current_url)
-                self.logger.info(f"Processing {current_url} (Queue: {len(self.queue)})")
+                    page_data = await self.process_page(current_url)
+                    save_page(page_data.dict())
 
-                page_data = self.process_page(current_url)
-                save_page(page_data.dict())
-
-                if page_data.error is None:
-                    new_links = self.extract_links(page_data.body_html, current_url)
-                    self.queue.extend(
-                        link for link in new_links
-                        if link not in self.visited
-                        and link not in self.queue
-                    )
-        except KeyboardInterrupt:
-            self.logger.info("Crawling interrupted by user")
+                    if not page_data.error:
+                        new_links = await self.extract_links(page_data.body_html, current_url)
+                        self.queue.extend(
+                            link for link in new_links
+                            if link not in self.visited
+                            and link not in self.queue
+                        )
         except Exception as e:
             self.logger.error(f"Crawling failed: {str(e)}")
-        finally:
-            self.close_resources()
-            self.logger.info(f"Crawling completed. Visited {len(self.visited)} pages")

@@ -11,5 +11,5 @@ class Page(BaseModel):
     links: List[Dict] = []
     timestamp: datetime = datetime.now()
     error: Optional[str] = None
+    meta: Dict = {}
     processed: bool = True
-    meta: Dict = {}  # Add this line for custom metadata
