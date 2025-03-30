@@ -5,14 +5,17 @@ load_dotenv()
 
 
 class Config:
-    # Browser Settings
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-
-    # Database Settings
+    # MongoDB Configuration
     MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     MONGODB_DB = os.getenv("MONGODB_DB", "web_scraper")
+    MONGODB_USERNAME = os.getenv("MONGODB_USERNAME")
+    MONGODB_PASSWORD = os.getenv("MONGODB_PASSWORD")
+    MONGODB_AUTH_SOURCE = os.getenv("MONGODB_AUTH_SOURCE", "admin")
+
+    # Browser Settings
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    HEADLESS = not bool(os.getenv("SHOW_BROWSER", False))
 
     # Crawler Settings
-    REQUEST_TIMEOUT = 30
-    MAX_RETRIES = 3
-    IGNORED_EXTENSIONS = ['.pdf', '.jpg', '.png']
+    REQUEST_TIMEOUT = 30000  # milliseconds
+    MAX_PAGES = 1000

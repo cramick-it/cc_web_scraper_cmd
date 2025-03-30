@@ -17,7 +17,7 @@ class BaseScraperService:
         self.visible = visible
         self.visited = set()
         self.queue = deque([base_url])
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.playwright = None
         self.browser = None
 
@@ -34,6 +34,16 @@ class BaseScraperService:
             await self.browser.close()
         if self.playwright:
             await self.playwright.stop()
+
+    def normalize_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        return parsed._replace(fragment='', query='').geturl()
+
+    def should_follow_link(self, url: str) -> bool:
+        parsed = urlparse(url)
+        return (parsed.netloc == urlparse(self.base_url).netloc and
+                parsed.scheme in ('http', 'https') and
+                not any(url.endswith(ext) for ext in Config.IGNORED_EXTENSIONS))
 
     async def extract_links(self, html: str, current_url: str) -> List[str]:
         soup = BeautifulSoup(html, 'html.parser')
@@ -61,10 +71,7 @@ class BaseScraperService:
 
             links = await self.extract_links(content, url)
 
-            await page.close()
-            await context.close()
-
-            return Page(
+            page_data = Page(
                 site_id=self.site_id,
                 url=url,
                 status_code=status_code,
@@ -73,6 +80,11 @@ class BaseScraperService:
                 links=links,
                 error=None
             )
+
+            await page.close()
+            await context.close()
+
+            return page_data
         except Exception as e:
             return Page(
                 site_id=self.site_id,
@@ -107,3 +119,4 @@ class BaseScraperService:
                         )
         except Exception as e:
             self.logger.error(f"Crawling failed: {str(e)}")
+            raise

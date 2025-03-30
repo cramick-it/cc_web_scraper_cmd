@@ -1,5 +1,5 @@
 from bs4 import BeautifulSoup
-from .base_scraper_service import BaseScraperService
+from web_scraper.services.base_scraper_service import BaseScraperService
 from web_scraper.entity.models import Page
 import logging
 
