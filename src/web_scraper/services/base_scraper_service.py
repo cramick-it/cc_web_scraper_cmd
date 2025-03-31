@@ -1,13 +1,17 @@
 import asyncio
 import hashlib
+import os
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from collections import deque
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import logging
 from playwright.async_api import async_playwright
-from web_scraper.database.client import save_page, save_headings, get_page
-from web_scraper.entity.models import Page, Heading
+from bson import ObjectId
+from web_scraper.database.client import (
+    save_page, save_headings, save_links, save_files, get_page
+)
+from web_scraper.entity.models import Page
 from web_scraper.config.config import Config
 from datetime import datetime
 
@@ -28,24 +32,64 @@ class BaseScraperService:
 
     def _extract_headings(self, soup: BeautifulSoup) -> List[Dict]:
         headings = []
-        now = datetime.now()
-        for i in range(1, 7):  # h1 through h6
-            for heading in soup.find_all(f'h{i}'):
-                heading_text = heading.get_text(strip=True)
-                if heading_text:  # Only include non-empty headings
-                    headings.append({
-                        'tag': f'h{i}',
-                        'title': heading_text,
-                        'text': heading_text,
-                        'text_html': str(heading),
-                        'anchor': str(heading),
-                        'level': i,
-                        'checksum': self._generate_checksum(str(heading)),
-                        'created_at': now,
-                        'updated_at': now,
-                        'changed_at': now
-                    })
+        stack = []  # To track heading hierarchy
+
+        for heading in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+            level = int(heading.name[1])
+            heading_text = heading.get_text(strip=True)
+
+            if heading_text:
+                # Pop stack until we find parent heading
+                while stack and stack[-1]['level'] >= level:
+                    stack.pop()
+
+                parent_id = stack[-1]['checksum'] if stack else None
+
+                heading_data = {
+                    'tag': heading.name,
+                    'title': heading_text,
+                    'text': heading_text,
+                    'text_html': str(heading),
+                    'anchor': str(heading),
+                    'level': level,
+                    'checksum': self._generate_checksum(str(heading)),
+                    'parent_id': parent_id
+                }
+
+                headings.append(heading_data)
+                stack.append(heading_data)
+
         return headings
+
+    def _extract_links(self, soup: BeautifulSoup, base_url: str) -> Tuple[List[Dict], List[Dict]]:
+        links = []
+        files = []
+
+        for a in soup.find_all('a', href=True):
+            href = a['href'].strip()
+            if not href or href.startswith(('javascript:', 'mailto:', 'tel:')):
+                continue
+
+            absolute_url = urljoin(base_url, href)
+            title = a.get_text(strip=True)
+
+            # Check if it's a file link
+            file_ext = os.path.splitext(absolute_url)[1].lower()
+            if file_ext in Config.FILE_EXTENSIONS:
+                files.append({
+                    'url': absolute_url,
+                    'title': title,
+                    'file_name': os.path.basename(absolute_url),
+                    'file_extension': file_ext
+                })
+            else:
+                links.append({
+                    'url': absolute_url,
+                    'title': title,
+                    'href': href
+                })
+
+        return links, files
 
     async def __aenter__(self):
         self.playwright = await async_playwright().start()
@@ -81,22 +125,29 @@ class BaseScraperService:
                 return Page(**existing_page)
 
             soup = BeautifulSoup(content, 'html.parser')
-            headings = self._extract_headings(soup)
             body_text = await page.inner_text('body')
 
+            # Extract all data
+            headings = self._extract_headings(soup)
+            links, files = self._extract_links(soup, url)
+
+            # Save page and get its ID
             page_data = Page(
                 site_id=self.site_id,
                 url=url,
                 status_code=status_code,
                 content_html=content,
                 content_text=body_text,
-                headings=headings,
                 checksum=checksum
             )
 
-            # Save to database
-            save_page(page_data.dict())
-            save_headings(url, headings)
+            page_id = save_page(page_data.dict())
+
+            if page_id:
+                # Save related data
+                save_headings(page_id, headings)
+                save_links(page_id, links)
+                save_files(page_id, files)
 
             await page.close()
             await context.close()
@@ -126,32 +177,19 @@ class BaseScraperService:
                     page_data = await self.process_page(current_url)
 
                     if not page_data.error:
-                        new_links = await self._extract_links(page_data.content_html, current_url)
+                        new_links, _ = self._extract_links(
+                            BeautifulSoup(page_data.content_html, 'html.parser'),
+                            current_url
+                        )
                         self.queue.extend(
-                            link for link in new_links
-                            if link not in self.visited
-                            and link not in self.queue
+                            link['url'] for link in new_links
+                            if link['url'] not in self.visited
+                            and link['url'] not in self.queue
+                            and self._should_follow_link(link['url'])
                         )
         except Exception as e:
             self.logger.error(f"Crawling failed: {str(e)}")
             raise
-
-    async def _extract_links(self, html: str, current_url: str) -> List[str]:
-        soup = BeautifulSoup(html, 'html.parser')
-        links = set()
-        for a in soup.find_all('a', href=True):
-            href = a['href'].strip()
-            if not href or href.startswith(('javascript:', 'mailto:', 'tel:')):
-                continue
-            absolute_url = urljoin(current_url, href)
-            normalized_url = self._normalize_url(absolute_url)
-            if self._should_follow_link(normalized_url):
-                links.add(normalized_url)
-        return list(links)
-
-    def _normalize_url(self, url: str) -> str:
-        parsed = urlparse(url)
-        return parsed._replace(fragment='', query='').geturl()
 
     def _should_follow_link(self, url: str) -> bool:
         parsed = urlparse(url)

@@ -16,6 +16,8 @@ class Config:
     REQUEST_TIMEOUT = 30000  # milliseconds
     MAX_PAGES = 1000
     IGNORED_EXTENSIONS = ['.pdf', '.jpg', '.png', '.docx']
+    FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']
 
-    # Content Settings
-    MIN_CONTENT_LENGTH = 20  # Minimum characters to consider valid content
+    # Browser Settings
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    HEADLESS = not bool(os.getenv("SHOW_BROWSER", False))
