@@ -23,6 +23,10 @@ class DatabaseClient:
                     authSource=Config.MONGODB_AUTH_SOURCE,
                     connectTimeoutMS=30000
                 )
+                print('instance ... Config.MONGODB_URI', Config.MONGODB_URI)
+                print('instance ... Config.MONGODB_USERNAME', Config.MONGODB_USERNAME)
+                print('instance ... Config.MONGODB_PASSWORD', Config.MONGODB_PASSWORD)
+                print('instance ... Config.MONGODB_AUTH_SOURCE', Config.MONGODB_AUTH_SOURCE)
                 cls._instance.db = cls._instance.client[Config.MONGODB_DB]
                 # Create indexes
                 cls._instance.db.pages.create_index('url', unique=True)
@@ -39,6 +43,8 @@ class DatabaseClient:
 def save_page(page_data: dict) -> Optional[PyObjectId]:
     try:
         db = DatabaseClient().db
+        print(db)
+        print(db.client)
         now = datetime.now()
 
         # Remove created_at from update if it exists

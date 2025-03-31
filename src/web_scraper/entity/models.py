@@ -2,15 +2,25 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Dict
 from bson import ObjectId
-
+from pydantic.json_schema import JsonSchemaValue
 
 class PyObjectId(ObjectId):
     @classmethod
-    def __get_pydantic_core_schema__(cls, _source_type, _handler):
-        return {
-            'type': 'objectid',
-            'py_type': cls,
-        }
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if isinstance(v, ObjectId):
+            return v
+        if not ObjectId.is_valid(v):
+            raise ValueError("Invalid ObjectId")
+        return ObjectId(v)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler) -> JsonSchemaValue:
+        # This replaces __modify_schema__ in Pydantic v2
+        return {"type": "string"}
 
 
 class File(BaseModel):

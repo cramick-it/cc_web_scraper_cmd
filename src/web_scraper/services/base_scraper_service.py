@@ -162,7 +162,7 @@ class BaseScraperService:
                 error=str(e)
             )
 
-    async def crawl(self, max_pages: int = 5):
+    async def crawl(self, visible: bool = False, max_pages: int = 5):
         try:
             async with self:
                 while self.queue and len(self.visited) < max_pages:
