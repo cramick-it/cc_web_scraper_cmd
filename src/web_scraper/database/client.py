@@ -1,10 +1,10 @@
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
-from bson import ObjectId
 from web_scraper.config.config import Config
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional
+from web_scraper.entity.models import PyObjectId
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class DatabaseClient:
         return cls._instance
 
 
-def save_page(page_data: dict) -> Optional[ObjectId]:
+def save_page(page_data: dict) -> Optional[PyObjectId]:
     try:
         db = DatabaseClient().db
         now = datetime.now()
@@ -58,17 +58,17 @@ def save_page(page_data: dict) -> Optional[ObjectId]:
 
         if result.upserted_id:
             logger.info(f"Saved new page: {page_data['url']}")
-            return result.upserted_id
+            return PyObjectId(result.upserted_id)
         else:
             page = db.pages.find_one({'url': page_data['url']})
             logger.info(f"Updated existing page: {page_data['url']}")
-            return page['_id'] if page else None
+            return PyObjectId(page['_id']) if page else None
     except Exception as e:
         logger.error(f"Failed to save page: {str(e)}")
         return None
 
 
-def save_headings(page_id: ObjectId, headings: List[Dict]) -> bool:
+def save_headings(page_id: PyObjectId, headings: List[Dict]) -> bool:
     try:
         db = DatabaseClient().db
         now = datetime.now()
@@ -98,7 +98,7 @@ def save_headings(page_id: ObjectId, headings: List[Dict]) -> bool:
         return False
 
 
-def save_links(page_id: ObjectId, links: List[Dict]) -> bool:
+def save_links(page_id: PyObjectId, links: List[Dict]) -> bool:
     try:
         db = DatabaseClient().db
         now = datetime.now()
@@ -123,7 +123,7 @@ def save_links(page_id: ObjectId, links: List[Dict]) -> bool:
         return False
 
 
-def save_files(page_id: ObjectId, files: List[Dict]) -> bool:
+def save_files(page_id: PyObjectId, files: List[Dict]) -> bool:
     try:
         db = DatabaseClient().db
         now = datetime.now()

@@ -7,11 +7,10 @@ from collections import deque
 from typing import List, Dict, Optional, Tuple
 import logging
 from playwright.async_api import async_playwright
-from bson import ObjectId
 from web_scraper.database.client import (
     save_page, save_headings, save_links, save_files, get_page
 )
-from web_scraper.entity.models import Page
+from web_scraper.entity.models import Page, PyObjectId
 from web_scraper.config.config import Config
 from datetime import datetime
 
