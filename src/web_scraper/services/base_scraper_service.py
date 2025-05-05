@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import os
+from abc import ABCMeta, abstractmethod
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from collections import deque
@@ -15,7 +16,7 @@ from web_scraper.config.config import Config
 from datetime import datetime
 
 
-class BaseScraperService:
+class BaseScraperService(metaclass=ABCMeta):
     def __init__(self, base_url: str, site_id: str, visible: bool = False):
         self.base_url = base_url
         self.site_id = site_id
@@ -25,6 +26,10 @@ class BaseScraperService:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.playwright = None
         self.browser = None
+
+    @abstractmethod
+    async def process_page_custom(self, url: str) -> Page:
+        pass
 
     def _generate_checksum(self, content: str) -> str:
         return hashlib.md5(content.encode()).hexdigest()
@@ -170,10 +175,10 @@ class BaseScraperService:
                     if current_url in self.visited:
                         continue
 
-                    self.visited.add(current_url)
                     self.logger.info(f"Processing: {current_url}")
 
-                    page_data = await self.process_page(current_url)
+                    page_data = await self.process_page_custom(current_url)
+                    self.visited.add(current_url)
 
                     if not page_data.error:
                         new_links, _ = self._extract_links(

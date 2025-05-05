@@ -14,8 +14,8 @@ class EyewikiService(BaseScraperService):
         )
         self.logger = logging.getLogger(__name__)
 
-    async def process_page(self, url: str) -> Page:
-        page_data = await super().process_page(url)
+    async def process_page_custom(self, url: str) -> Page:
+        page_data = await self.process_page(url)
 
         if page_data.error:
             return page_data

@@ -33,8 +33,9 @@ def crawl(site, visible, limit, force):
 if __name__ == '__main__':
     # cli()
     async def run_crawl():
-        service = service_map['eyewiki'](site_id='eyewiki', visible=True)
-        await service.crawl(max_pages=3)
+        # service = service_map['eyewiki'](site_id='eyewiki', visible=True)
+        service = service_map['medicalnewstoday'](site_id='medicalnewstoday', visible=True)
+        await service.crawl(max_pages=1000)
 
 
     asyncio.run(run_crawl())

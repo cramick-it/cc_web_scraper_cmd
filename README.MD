@@ -51,10 +51,8 @@ poetry run scrape crawl --site medicalnewstoday
 
 # Sa vidljivim browserom (debug mode)
 poetry run scrape crawl --site eyewiki --visible --limit 5
+poetry run scrape crawl --site medicalnewstoday --visible --limit 5
 
-
-poetry run scrape scrape_eyewiki --visible --limit 5
-poetry run scrape scrape_medicalnewstoday --visible --limit 5
 
 # Normalno pokretanje
 poetry run scrape crawl --site medicalnewstoday
